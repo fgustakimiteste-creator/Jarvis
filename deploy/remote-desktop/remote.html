@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>JARVIS — Interface original</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; background: #000306; color: #e8f8ff; font-family: system-ui, sans-serif; }
+    body { display: grid; grid-template-rows: 42px minmax(0, 1fr); overflow: hidden; }
+    header { display: flex; align-items: center; gap: 10px; padding: 0 12px; background: #00080f; border-bottom: 1px solid #0a2535; }
+    .mark { color: #00c8ff; font: 700 12px ui-monospace, monospace; letter-spacing: .16em; margin-right: auto; }
+    button { appearance: none; border: 1px solid #1a5c7a; color: #bdefff; background: #001421; border-radius: 5px; padding: 7px 11px; font-size: 12px; }
+    button:disabled { opacity: .55; }
+    button.active { border-color: #00e5ff; color: #00e5ff; background: #00202b; }
+    #status { color: #3a9ab0; font: 11px ui-monospace, monospace; white-space: nowrap; }
+    #screen { width: 100%; height: 100%; overflow: hidden; background: #000306; }
+    #desktop { border: 0; display: block; width: 100%; height: 100%; background: #000306; }
+    @media(max-width:600px) {
+      body { grid-template-rows: 48px minmax(0,1fr); }
+      header { gap: 6px; padding: 0 6px; }
+      .mark { font-size: 10px; letter-spacing: .08em; }
+      button { padding: 7px 8px; font-size: 11px; }
+      #status { display:none; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="mark">JARVIS / ORIGINAL DESKTOP</div>
+    <button id="mic">Ativar microfone</button>
+    <button id="speaker">Ouvir JARVIS</button>
+    <span id="status">ÁUDIO DESATIVADO</span>
+  </header>
+  <main id="screen">
+    <iframe id="desktop" title="Interface desktop original do JARVIS" allow="clipboard-read; clipboard-write" src="/vnc.html?autoconnect=true&resize=scale&path=websockify"></iframe>
+  </main>
+  <script>
+    (() => {
+      const micButton = document.getElementById("mic");
+      const speakerButton = document.getElementById("speaker");
+      const status = document.getElementById("status");
+      const wsUrl = (path) => {
+        const protocol = location.protocol === "https:" ? "wss:" : "ws:";
+        return protocol + "//" + location.host + path;
+      };
+
+      let audioContext = null;
+      let microphoneStream = null;
+      let microphoneSocket = null;
+      let speakerSocket = null;
+      let sourceNode = null;
+      let processorNode = null;
+      let nextPlaybackTime = 0;
+      let micEnabled = false;
+      let speakerEnabled = false;
+
+      async function ensureAudioContext() {
+        if (!audioContext) audioContext = new AudioContext({ sampleRate: 24000 });
+        if (audioContext.state !== "running") await audioContext.resume();
+        return audioContext;
+      }
+
+      function stopMicrophone() {
+        micEnabled = false;
+        if (processorNode) { processorNode.disconnect(); processorNode.onaudioprocess = null; processorNode = null; }
+        if (sourceNode) { sourceNode.disconnect(); sourceNode = null; }
+        if (microphoneStream) { microphoneStream.getTracks().forEach(track => track.stop()); microphoneStream = null; }
+        if (microphoneSocket) { microphoneSocket.close(); microphoneSocket = null; }
+        micButton.textContent = "Ativar microfone";
+        micButton.classList.remove("active");
+        status.textContent = speakerEnabled ? "SAÍDA DE ÁUDIO ATIVA" : "ÁUDIO DESATIVADO";
+      }
+
+      async function startMicrophone() {
+        if (micEnabled) { stopMicrophone(); return; }
+        try {
+          await ensureAudioContext();
+          microphoneStream = await navigator.mediaDevices.getUserMedia({
+            audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+            video: false
+          });
+          microphoneSocket = new WebSocket(wsUrl("/mic"));
+          microphoneSocket.binaryType = "arraybuffer";
+          microphoneSocket.onopen = () => {
+            micEnabled = true;
+            sourceNode = audioContext.createMediaStreamSource(microphoneStream);
+            processorNode = audioContext.createScriptProcessor(2048, 1, 1);
+            processorNode.onaudioprocess = (event) => {
+              if (!microphoneSocket || microphoneSocket.readyState !== WebSocket.OPEN) return;
+              if (microphoneSocket.bufferedAmount > 65536) return;
+              const input = event.inputBuffer.getChannelData(0);
+              const output = event.outputBuffer.getChannelData(0);
+              output.fill(0);
+              const ratio = audioContext.sampleRate / 16000;
+              const outputLength = Math.floor(input.length / ratio);
+              const pcm = new Int16Array(outputLength);
+              for (let i = 0; i < outputLength; i++) {
+                const sample = Math.max(-1, Math.min(1, input[Math.floor(i * ratio)]));
+                pcm[i] = sample < 0 ? sample * 32768 : sample * 32767;
+              }
+              microphoneSocket.send(pcm.buffer);
+            };
+            sourceNode.connect(processorNode);
+            processorNode.connect(audioContext.destination);
+            micButton.textContent = "Desativar microfone";
+            micButton.classList.add("active");
+            status.textContent = "MICROFONE ATIVO";
+          };
+          microphoneSocket.onerror = () => { status.textContent = "FALHA NO CANAL DO MICROFONE"; };
+          microphoneSocket.onclose = () => {
+            if (micEnabled) stopMicrophone();
+          };
+        } catch (error) {
+          stopMicrophone();
+          status.textContent = error && error.name === "NotAllowedError"
+            ? "PERMISSÃO DO MICROFONE NEGADA"
+            : "NÃO FOI POSSÍVEL ATIVAR O MICROFONE";
+        }
+      }
+
+      function playPcm(arrayBuffer) {
+        if (!audioContext || !speakerEnabled || !arrayBuffer || arrayBuffer.byteLength < 2) return;
+        const pcm = new Int16Array(arrayBuffer);
+        const audioBuffer = audioContext.createBuffer(1, pcm.length, 24000);
+        const channel = audioBuffer.getChannelData(0);
+        for (let i = 0; i < pcm.length; i++) channel[i] = pcm[i] / 32768;
+        const source = audioContext.createBufferSource();
+        source.buffer = audioBuffer;
+        source.connect(audioContext.destination);
+        const now = audioContext.currentTime;
+        if (nextPlaybackTime < now) nextPlaybackTime = now;
+        if (nextPlaybackTime - now > 0.5) return;
+        source.start(nextPlaybackTime);
+        nextPlaybackTime += audioBuffer.duration;
+      }
+
+      async function toggleSpeaker() {
+        if (speakerEnabled) {
+          speakerEnabled = false;
+          if (speakerSocket) speakerSocket.close();
+          speakerSocket = null;
+          speakerButton.textContent = "Ouvir JARVIS";
+          speakerButton.classList.remove("active");
+          status.textContent = micEnabled ? "MICROFONE ATIVO" : "ÁUDIO DESATIVADO";
+          return;
+        }
+        try {
+          await ensureAudioContext();
+          speakerSocket = new WebSocket(wsUrl("/speaker"));
+          speakerSocket.binaryType = "arraybuffer";
+          speakerSocket.onopen = () => {
+            speakerEnabled = true;
+            speakerButton.textContent = "Parar áudio";
+            speakerButton.classList.add("active");
+            status.textContent = micEnabled ? "MICROFONE E ÁUDIO ATIVOS" : "SAÍDA DE ÁUDIO ATIVA";
+          };
+          speakerSocket.onmessage = event => playPcm(event.data);
+          speakerSocket.onerror = () => { status.textContent = "FALHA NO CANAL DE ÁUDIO"; };
+          speakerSocket.onclose = () => {
+            speakerEnabled = false;
+            speakerButton.textContent = "Ouvir JARVIS";
+            speakerButton.classList.remove("active");
+          };
+        } catch {
+          status.textContent = "NÃO FOI POSSÍVEL ATIVAR O ÁUDIO";
+        }
+      }
+
+      micButton.addEventListener("click", startMicrophone);
+      speakerButton.addEventListener("click", toggleSpeaker);
+      window.addEventListener("beforeunload", () => {
+        stopMicrophone();
+        if (speakerSocket) speakerSocket.close();
+      });
+    })();
+  </script>
+</body>
+</html>

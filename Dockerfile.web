@@ -1,32 +1,60 @@
-FROM node:24-alpine AS build
+FROM python:3.12-slim
 
-RUN apk add --no-cache unzip
-WORKDIR /build
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PORT=10000 \
+    DISPLAY=:99 \
+    QT_QPA_PLATFORM=xcb \
+    QT_X11_NO_MITSHM=1 \
+    QTWEBENGINE_DISABLE_SANDBOX=1 \
+    JARVIS_CLI=1 \
+    JARVIS_SKIP_CLAP_GATE=1 \
+    XDG_RUNTIME_DIR=/run/pulse \
+    PULSE_RUNTIME_PATH=/run/pulse \
+    PULSE_SERVER=unix:/run/pulse/native \
+    PULSE_SINK=jarvis_sink \
+    PULSE_SOURCE=jarvis_mic
+
+WORKDIR /app
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+       build-essential unzip \
+       xvfb openbox x11vnc novnc websockify nginx apache2-utils supervisor \
+       pulseaudio pulseaudio-utils dbus-x11 \
+       libasound2 libasound2-plugins libpulse0 libportaudio2 portaudio19-dev \
+       libglib2.0-0 libgl1 libegl1 libopengl0 libdbus-1-3 libfontconfig1 \
+       libnss3 libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 \
+       libxcb-image0 libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 \
+       libxcb-xinerama0 libxcb-xkb1 libxcb-shape0 libxcb-xfixes0 \
+       libxrender1 libxi6 libxtst6 libxcomposite1 libxdamage1 libxfixes3 \
+       fonts-dejavu-core \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY JARVIS-OS-V.2-main.zip /tmp/jarvis.zip
-RUN unzip -q /tmp/jarvis.zip -d /build \
-    && mkdir -p /app/web \
-    && cp -a /build/JARVIS-OS-V.2-main/web/. /app/web/ \
-    && rm -rf /build/JARVIS-OS-V.2-main /tmp/jarvis.zip
 
-WORKDIR /app/web
-ENV NEXT_TELEMETRY_DISABLED=1 \
-    NEXT_PUBLIC_API_URL=https://jarvis-os-fgustakimiteste.onrender.com \
-    NEXT_PUBLIC_WS_URL=wss://jarvis-os-fgustakimiteste.onrender.com
+RUN mkdir -p /tmp/jarvis-source /run/pulse /run/remote /var/log/supervisor \
+    && unzip -q /tmp/jarvis.zip -d /tmp/jarvis-source \
+    && test -f /tmp/jarvis-source/JARVIS-OS-V.2-main/ui.py \
+    && test -f /tmp/jarvis-source/JARVIS-OS-V.2-main/main.py \
+    && cp -a /tmp/jarvis-source/JARVIS-OS-V.2-main/. /app/ \
+    && rm -rf /tmp/jarvis-source /tmp/jarvis.zip \
+    && python -m pip install --upgrade pip \
+    && python -m pip install -r /app/requirements.txt \
+    && useradd --create-home --uid 10001 --shell /bin/bash jarvis \
+    && mkfifo /run/pulse/mic.pipe \
+    && chown -R jarvis:jarvis /app /run/pulse /run/remote /home/jarvis \
+    && chmod 660 /run/pulse/mic.pipe
 
-RUN npm ci --no-audit --no-fund \
-    && npm run build
+COPY deploy/remote-desktop/audio_bridge.py /opt/jarvis-remote/audio_bridge.py
+COPY deploy/remote-desktop/remote.html /usr/share/novnc/remote.html
+COPY deploy/remote-desktop/supervisord.conf /etc/supervisor/conf.d/jarvis.conf
+COPY deploy/remote-desktop/nginx.conf.template /etc/nginx/templates/jarvis.conf.template
+COPY deploy/remote-desktop/entrypoint.sh /usr/local/bin/jarvis-remote-entrypoint
 
-FROM node:24-alpine AS runtime
-WORKDIR /app
-ENV NODE_ENV=production \
-    PORT=10000 \
-    NEXT_TELEMETRY_DISABLED=1
-
-COPY --from=build /app/web/.next ./.next
-COPY --from=build /app/web/node_modules ./node_modules
-COPY --from=build /app/web/package.json ./package.json
-COPY --from=build /app/web/next.config.ts ./next.config.ts
+RUN chmod 755 /usr/local/bin/jarvis-remote-entrypoint \
+    && chown -R jarvis:jarvis /opt/jarvis-remote /home/jarvis /run/pulse /run/remote
 
 EXPOSE 10000
-CMD ["sh", "-c", "npm run start -- --hostname 0.0.0.0 --port ${PORT:-10000}"]
+ENTRYPOINT ["/usr/local/bin/jarvis-remote-entrypoint"]
