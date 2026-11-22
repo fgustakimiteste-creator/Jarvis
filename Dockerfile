@@ -3,28 +3,36 @@ FROM python:3.12-slim
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
-    JARVIS_PUBLIC_MODE=true \
-    JARVIS_HOST=0.0.0.0 \
-    JARVIS_PORT=10000 \
-    JARVIS_DB_PATH=/opt/jarvis/data/jarvis.db
+    PORT=10000 \
+    JARVIS_ENV=production \
+    ALLOW_EPHEMERAL_SQLITE_PRODUCTION=1 \
+    DATABASE_URL=sqlite:////app/tmp/jarvis_web.db \
+    REDIS_REQUIRED=0
 
-WORKDIR /opt/jarvis
-COPY JARVIS_OS_V4_1.zip /tmp/jarvis.zip
-COPY render_public_patch.py /tmp/render_public_patch.py
+WORKDIR /app
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends unzip \
-    && mkdir -p /tmp/jarvis-src /opt/jarvis/data \
-    && unzip -q /tmp/jarvis.zip -d /tmp/jarvis-src \
-    && cp -a /tmp/jarvis-src/JARVIS/. /opt/jarvis/ \
-    && python /tmp/render_public_patch.py \
-    && python -m compileall -q /opt/jarvis/app \
+    && apt-get install -y --no-install-recommends \
+        unzip build-essential libglib2.0-0 libgl1 libportaudio2 portaudio19-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY JARVIS-OS-V.2-main.zip /tmp/jarvis.zip
+COPY render_v2_patch.py /tmp/render_v2_patch.py
+
+RUN mkdir -p /tmp/jarvis-source /app/tmp \
+    && unzip -q /tmp/jarvis.zip -d /tmp/jarvis-source \
+    && test -f /tmp/jarvis-source/JARVIS-OS-V.2-main/api/server.py \
+    && test -f /tmp/jarvis-source/JARVIS-OS-V.2-main/web/package.json \
+    && cp -a /tmp/jarvis-source/JARVIS-OS-V.2-main/. /app/ \
+    && python /tmp/render_v2_patch.py \
     && python -m pip install --upgrade pip \
-    && python -m pip install -r /opt/jarvis/requirements.txt \
-    && rm -rf /var/lib/apt/lists/* /tmp/jarvis-src /tmp/jarvis.zip /tmp/render_public_patch.py \
+    && python -m pip install -r /app/requirements.txt \
+    && chmod +x /app/scripts/start_web_api.sh \
     && useradd --system --uid 10001 jarvis \
-    && chown -R jarvis:jarvis /opt/jarvis
+    && chown -R jarvis:jarvis /app \
+    && rm -rf /tmp/jarvis-source /tmp/jarvis.zip /tmp/render_v2_patch.py
 
 USER jarvis
+
 EXPOSE 10000
-CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-10000}"]
+CMD ["./scripts/start_web_api.sh"]
