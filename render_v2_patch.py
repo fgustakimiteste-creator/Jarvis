@@ -20,9 +20,8 @@ new = '''        is_postgres = self.database_url.startswith(("postgresql://", "p
         is_ephemeral_sqlite = allow_ephemeral_sqlite and self.database_url.startswith("sqlite:///")
         if not (is_postgres or is_ephemeral_sqlite):
             raise RuntimeError("Production DATABASE_URL must point to Postgres unless ephemeral SQLite is explicitly enabled")'''
-count = source.count(old)
-if count != 1:
-    raise RuntimeError(f"Expected one production database validation block; found {count}")
+if source.count(old) != 1:
+    raise RuntimeError("Could not find the expected production database validation block.")
 config.write_text(source.replace(old, new, 1), encoding="utf-8")
 print("Enabled explicitly opted-in ephemeral SQLite for the Render free-tier API.")
 
@@ -38,11 +37,14 @@ validator_function = r'''def _validate_with_gemini(api_key: str, timeout_seconds
 
         client = genai.Client(
             api_key=api_key,
-            http_options={"api_version": "v1beta"},
+            http_options=types.HttpOptions(
+                api_version="v1beta",
+                timeout=max(1000, int(timeout_seconds * 1000)),
+            ),
         )
 
-        # models.list is useful for discovering candidates, but its metadata is
-        # not an authoritative test of whether a project can open a Live session.
+        # models.list is useful for discovery, but it is not an authoritative
+        # permission check for opening a Gemini Live session.
         try:
             listed_models = list(client.models.list())
         except Exception:
@@ -81,27 +83,29 @@ validator_function = r'''def _validate_with_gemini(api_key: str, timeout_seconds
         if configured not in candidates:
             candidates.append(configured)
 
-        async def probe(model: str) -> None:
-            config = types.LiveConnectConfig(response_modalities=["AUDIO"])
-            async with asyncio.timeout(timeout_seconds):
-                async with client.aio.live.connect(
-                    model=model.removeprefix("models/"),
-                    config=config,
-                ):
-                    # Successful setupComplete proves the project can open
-                    # a real Live session. No user audio or prompt is sent.
-                    return None
+        async def probe_candidates():
+            errors = []
+            for model in candidates[:3]:
+                try:
+                    config = types.LiveConnectConfig(response_modalities=["AUDIO"])
+                    async with asyncio.timeout(timeout_seconds):
+                        async with client.aio.live.connect(
+                            model=model.removeprefix("models/"),
+                            config=config,
+                        ):
+                            # setupComplete proves that a real Live session can
+                            # be opened. No user prompt or audio is transmitted.
+                            return model, None
+                except Exception as exc:
+                    errors.append(f"{model}: {str(exc).strip() or exc.__class__.__name__}")
+            return None, errors
 
-        errors: list[str] = []
-        for model in candidates[:3]:
-            try:
-                asyncio.run(probe(model))
-                return ApiKeyValidationResult(
-                    True,
-                    f"Gemini API key and Live access verified ({model.removeprefix('models/ ')}).",
-                )
-            except Exception as exc:
-                errors.append(f"{model}: {str(exc).strip() or exc.__class__.__name__}")
+        selected_model, errors = asyncio.run(probe_candidates())
+        if selected_model:
+            return ApiKeyValidationResult(
+                True,
+                f"Gemini API key and Live access verified ({selected_model.removeprefix('models/')}).",
+            )
 
         detail = errors[-1] if errors else "No Live model could be probed."
         lowered = detail.lower()
@@ -147,7 +151,7 @@ replace_function(
     "\ndef validate_gemini_api_key(",
     validator_function,
 )
-print("Changed Gemini key verification to probe a real Live WebSocket session.")
+print("Changed key verification to probe a real Gemini Live WebSocket session.")
 
 live_model = Path("/app/core/live_model.py")
 source = live_model.read_text(encoding="utf-8")
