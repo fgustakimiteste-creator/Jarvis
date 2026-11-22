@@ -46,6 +46,7 @@ RUN mkdir -p /tmp/jarvis-source /run/pulse /run/remote /var/log/supervisor \
     && chown -R jarvis:jarvis /app /run/pulse /run/remote /home/jarvis
 
 COPY deploy/remote-desktop/audio_bridge.py /opt/jarvis-remote/audio_bridge.py
+COPY deploy/remote-desktop/vnc_probe.py /opt/jarvis-remote/vnc_probe.py
 COPY deploy/remote-desktop/asoundrc /home/jarvis/.asoundrc
 COPY deploy/remote-desktop/remote.html /usr/share/novnc/remote.html
 COPY deploy/remote-desktop/supervisord.conf /etc/supervisor/conf.d/jarvis.conf
