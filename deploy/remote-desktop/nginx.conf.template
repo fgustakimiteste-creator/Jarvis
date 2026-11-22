@@ -2,8 +2,7 @@ server {
     listen ${PORT};
     server_name _;
     root /usr/share/novnc;
-    log_format vnc_ws '$remote_addr "$request" status=$status upgrade="$http_upgrade" connection="$http_connection" upstream="$upstream_addr" upstream_status="$upstream_status"';
-    access_log /dev/stdout vnc_ws;
+    access_log /dev/stdout combined;
     error_log /dev/stderr warn;
 
     auth_basic "JARVIS Original Desktop";
