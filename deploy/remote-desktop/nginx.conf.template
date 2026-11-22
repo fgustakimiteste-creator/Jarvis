@@ -2,6 +2,8 @@ server {
     listen ${PORT};
     server_name _;
     root /usr/share/novnc;
+    access_log /dev/stdout combined;
+    error_log /dev/stderr warn;
 
     auth_basic "JARVIS Original Desktop";
     auth_basic_user_file /etc/nginx/.htpasswd;
