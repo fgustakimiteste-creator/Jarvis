@@ -41,9 +41,9 @@ server {
         proxy_buffering off;
     }
 
-    # noVNC sends the WebSocket handshake to /websockify.
-    # Strip that URL prefix before forwarding to websockify's root handler.
-    location ^~ /websockify {
+    # noVNC 1.7+ uses the WebSocket path below its base URL.
+    # Keep the proxy endpoint aligned with /vncws/vnc.html.
+    location ^~ /vncws/websockify {
         proxy_pass http://127.0.0.1:6080/;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
@@ -54,8 +54,11 @@ server {
         proxy_buffering off;
     }
 
-    location / {
-        root /usr/share/novnc;
-        try_files $uri $uri/ =404;
+    location ^~ /vncws/ {
+        alias /usr/share/novnc/;
+        index vnc.html;
+        try_files $uri $uri/ /vncws/vnc.html;
     }
+
+
 }
