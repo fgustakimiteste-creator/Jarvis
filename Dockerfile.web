@@ -21,7 +21,7 @@ WORKDIR /app
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
        build-essential unzip \
-       xvfb openbox x11vnc novnc websockify nginx apache2-utils supervisor \
+       xvfb openbox x11vnc novnc nginx apache2-utils supervisor \
        pulseaudio pulseaudio-utils dbus-x11 gettext-base \
        libasound2 libasound2-plugins libpulse0 libportaudio2 portaudio19-dev \
        libglib2.0-0 libgl1 libegl1 libopengl0 libdbus-1-3 libfontconfig1 \

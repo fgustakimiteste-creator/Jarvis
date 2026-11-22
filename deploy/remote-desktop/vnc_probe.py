@@ -97,8 +97,7 @@ if not PASSWORD:
 
 token = base64.b64encode(f"jarvis:{PASSWORD}".encode("utf-8")).decode("ascii")
 checks = [
-    ("raw RFB", raw_rfb_probe),
-    ("websockify direct", lambda: websocket_probe(HOST, 6080, "/websockify", None, "websockify direct")),
+    ("x11vnc native WebSocket", lambda: websocket_probe(HOST, 5900, "/websockify", None, "x11vnc native")),
     ("Nginx authenticated", lambda: websocket_probe(HOST, PORT, PATH, token, "Nginx authenticated")),
 ]
 failed = False
