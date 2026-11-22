@@ -41,10 +41,10 @@ server {
         proxy_buffering off;
     }
 
-    # x11vnc in this image handles the WebSocket handshake itself.
-    # Preserve the HTTP Upgrade and forward it directly to the native VNC socket.
+    # Nginx forwards noVNC's WebSocket endpoint to websockify.
+    # websockify translates the browser WebSocket stream into plain RFB TCP.
     location = /vncws/websockify {
-        proxy_pass http://127.0.0.1:5900;
+        proxy_pass http://127.0.0.1:6080/websockify;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";

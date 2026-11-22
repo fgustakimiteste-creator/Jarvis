@@ -3,9 +3,10 @@
 This infrastructure layer runs the original PyQt6 desktop application from the unchanged ZIP:
 - `main.py` launches `ui.py` and its original MainWindow/HUD/Mission Control.
 - Xvfb provides a virtual 1280x820 display.
-- noVNC displays the desktop in the browser; Nginx forwards the WebSocket Upgrade directly to x11vnc's native WebSocket handler.
+- TigerVNC's X0tigervnc scrapes that display and serves plain RFB over localhost.
+- noVNC displays the desktop in the browser; Nginx forwards the WebSocket Upgrade to websockify, which translates it to plain RFB for TigerVNC.
 - The browser microphone and speaker toolbar forwards PCM to/from PulseAudio through an isolated WebSocket bridge.
-- Nginx Basic Auth protects the page, VNC WebSocket, and audio sockets. The WebSocket handshake is terminated by x11vnc itself; there is no extra websockify-to-VNC protocol conversion.
+- Nginx Basic Auth protects the page, VNC WebSocket, and audio sockets. The browser WebSocket is terminated by websockify and forwarded as standard RFB to the localhost-only TigerVNC server.
 
 The source ZIP and all original app files remain unchanged. The browser toolbar is outside the PyQt window and does not replace its screens or components.
 

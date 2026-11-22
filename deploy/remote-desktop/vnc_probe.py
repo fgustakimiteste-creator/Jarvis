@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""One-shot VNC and authenticated noVNC WebSocket diagnostic."""
+"""End-to-end VNC checks: raw RFB, websockify, and authenticated Nginx."""
 from __future__ import annotations
 
 import base64
@@ -13,6 +13,7 @@ PASSWORD = os.environ.get("JARVIS_REMOTE_PASSWORD", "")
 ORIGIN = "https://jarvis-web-fgustakimiteste.onrender.com"
 PATH = "/vncws/websockify"
 
+
 def recv_exact(sock: socket.socket, size: int) -> bytes:
     data = bytearray()
     while len(data) < size:
@@ -22,17 +23,25 @@ def recv_exact(sock: socket.socket, size: int) -> bytes:
         data.extend(part)
     return bytes(data)
 
+
 def raw_rfb_probe() -> None:
-    print("[VNC-PROBE] Testing raw RFB server on 127.0.0.1:5900", flush=True)
+    print("[VNC-PROBE] Testing plain RFB server on localhost:5900", flush=True)
     with socket.create_connection((HOST, 5900), timeout=4) as sock:
         sock.settimeout(4)
         banner = recv_exact(sock, 12)
         print(f"[VNC-PROBE] Raw RFB banner: {banner!r}", flush=True)
         if not banner.startswith(b"RFB "):
             raise RuntimeError(f"Unexpected raw VNC banner: {banner!r}")
-        print("[VNC-PROBE] PASS: x11vnc speaks RFB on localhost:5900", flush=True)
+        print("[VNC-PROBE] PASS: TigerVNC is serving RFB on localhost:5900", flush=True)
 
-def websocket_probe(host: str, port: int, path: str, authorization: str | None, label: str) -> None:
+
+def websocket_probe(
+    host: str,
+    port: int,
+    path: str,
+    authorization: str | None,
+    label: str,
+) -> None:
     print(f"[VNC-PROBE] Testing WebSocket at {host}:{port}{path} ({label})", flush=True)
     key = base64.b64encode(b"0123456789abcdef").decode("ascii")
     headers = [
@@ -68,8 +77,7 @@ def websocket_probe(host: str, port: int, path: str, authorization: str | None, 
             raise RuntimeError(f"{label} 101 response omitted Sec-WebSocket-Accept")
         print(f"[VNC-PROBE] PASS: {label} WebSocket handshake accepted", flush=True)
 
-        # A VNC server must send an RFB version banner as its first WebSocket
-        # binary frame. Decode the frame to verify more than the HTTP 101.
+        # The first binary WebSocket frame should contain the RFB version banner.
         first = recv_exact(sock, 2)
         opcode = first[0] & 0x0F
         length = first[1] & 0x7F
@@ -77,19 +85,17 @@ def websocket_probe(host: str, port: int, path: str, authorization: str | None, 
             length = int.from_bytes(recv_exact(sock, 2), "big")
         elif length == 127:
             length = int.from_bytes(recv_exact(sock, 8), "big")
-        if first[1] & 0x80:
-            mask = recv_exact(sock, 4)
-        else:
-            mask = None
+        mask = recv_exact(sock, 4) if first[1] & 0x80 else None
         if length > 4096:
             raise RuntimeError(f"Unusually large initial VNC frame ({length} bytes)")
         payload = recv_exact(sock, length)
         if mask:
             payload = bytes(byte ^ mask[i % 4] for i, byte in enumerate(payload))
-        print(f"[VNC-PROBE] {label} first WebSocket frame opcode={opcode}, payload={payload!r}", flush=True)
+        print(f"[VNC-PROBE] {label} first frame opcode={opcode}, payload={payload!r}", flush=True)
         if opcode != 2 or not payload.startswith(b"RFB "):
             raise RuntimeError(f"{label} did not deliver an RFB banner in the first frame")
         print(f"[VNC-PROBE] PASS: {label} delivered the RFB banner", flush=True)
+
 
 if not PASSWORD:
     print("[VNC-PROBE] FAIL: JARVIS_REMOTE_PASSWORD is missing", flush=True)
@@ -97,7 +103,8 @@ if not PASSWORD:
 
 token = base64.b64encode(f"jarvis:{PASSWORD}".encode("utf-8")).decode("ascii")
 checks = [
-    ("x11vnc native WebSocket", lambda: websocket_probe(HOST, 5900, "/websockify", None, "x11vnc native")),
+    ("raw RFB", raw_rfb_probe),
+    ("websockify direct", lambda: websocket_probe(HOST, 6080, "/websockify", None, "websockify direct")),
     ("Nginx authenticated", lambda: websocket_probe(HOST, PORT, PATH, token, "Nginx authenticated")),
 ]
 failed = False
@@ -113,4 +120,4 @@ if failed:
     print("[VNC-PROBE] DIAGNOSTIC FAILED: at least one VNC layer did not pass.", flush=True)
     raise SystemExit(1)
 
-print("[VNC-PROBE] ALL CHECKS PASSED: RFB + websockify + authenticated Nginx", flush=True)
+print("[VNC-PROBE] ALL CHECKS PASSED: raw RFB + websockify + authenticated Nginx", flush=True)
