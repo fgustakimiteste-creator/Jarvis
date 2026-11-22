@@ -1,6 +1,6 @@
 # JARVIS OS — versão publicada
 
-Este repositório publica o pacote **`JARVIS-OS-V.2-main.zip`** enviado para a branch `main`. O pacote original é mantido intacto; os Dockerfiles apenas o extraem durante o build.
+Este repositório publica o pacote **`JARVIS-OS-V.2-main.zip`** enviado para a branch `main`. O pacote original é mantido intacto; os Dockerfiles o extraem durante o build e aplicam adaptações de hospedagem.
 
 ## Aplicação hospedada
 
@@ -13,11 +13,15 @@ Este repositório publica o pacote **`JARVIS-OS-V.2-main.zip`** enviado para a b
 
 A interface web Next.js usa a API FastAPI e o canal WebSocket. O backend hospeda contas individuais; cada usuário cria sua conta e conecta sua própria chave Gemini. As chaves são criptografadas antes de serem guardadas no banco.
 
+## Verificação da chave Gemini Live
+
+O backend não considera `models.list()` suficiente para declarar que um projeto tem ou não acesso ao Gemini Live. Ao salvar uma chave, ele tenta abrir uma conexão Live real, sem enviar áudio ou prompt. A seleção de modelo também usa o modelo configurado como fallback quando a listagem não informa os recursos Live; a autorização real é decidida pelo handshake WebSocket.
+
 ## Como o build usa o pacote
 
 - `Dockerfile`: extrai o ZIP e inicia `api.server:app` com as migrações Alembic.
 - `Dockerfile.web`: extrai o mesmo ZIP, instala as dependências de `web/` e compila a interface Next.js.
-- `render_v2_patch.py`: permite SQLite somente quando a opção explícita de armazenamento efêmero está ativada.
+- `render_v2_patch.py`: aplica ajustes de hospedagem sem reescrever o ZIP original.
 
 ## Limitação atual do plano gratuito
 
