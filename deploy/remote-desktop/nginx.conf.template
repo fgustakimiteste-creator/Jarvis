@@ -41,10 +41,11 @@ server {
         proxy_buffering off;
     }
 
-    # x11vnc in this image supports WebSocket handshakes natively.
-    # Pass the HTTP Upgrade directly to x11vnc; do not unwrap it with websockify.
-    location ^~ /vncws/websockify {
-        proxy_pass http://127.0.0.1:5900;
+    # noVNC WebSocket handshake terminates at websockify.
+    # Rewrite the base-path URL to websockify's expected /websockify route,
+    # then websockify forwards raw RFB bytes to the local x11vnc server.
+    location = /vncws/websockify {
+        proxy_pass http://127.0.0.1:6080/websockify;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
