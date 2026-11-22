@@ -4,9 +4,12 @@ import asyncio
 import os
 from contextlib import suppress
 
+import numpy as np
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
 MIC_PIPE = "/run/pulse/mic.pipe"
+MIC_INPUT_RATE = 16000
+MIC_PIPE_RATE = 44100
 SPEAKER_DEVICE = "jarvis_sink.monitor"
 SPEAKER_RATE = 24000
 SPEAKER_CHUNK_BYTES = 960  # 20 ms, mono signed 16-bit PCM
@@ -20,6 +23,26 @@ async def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+def _to_pulse_pipe(payload: bytes) -> bytes:
+    """Convert browser 16 kHz mono PCM into PulseAudio pipe-source defaults."""
+    mono = np.frombuffer(payload, dtype="<i2")
+    if mono.size == 0:
+        return b""
+    out_count = max(1, round(mono.size * MIC_PIPE_RATE / MIC_INPUT_RATE))
+    positions = np.arange(out_count, dtype=np.float64) * (MIC_INPUT_RATE / MIC_PIPE_RATE)
+    source_positions = np.arange(mono.size, dtype=np.float64)
+    resampled = np.interp(
+        positions,
+        source_positions,
+        mono.astype(np.float64),
+        left=float(mono[0]),
+        right=float(mono[-1]),
+    )
+    pcm = np.clip(np.rint(resampled), -32768, 32767).astype("<i2")
+    stereo = np.repeat(pcm[:, None], 2, axis=1)
+    return stereo.reshape(-1).tobytes()
+
+
 @app.websocket("/mic")
 async def microphone(websocket: WebSocket) -> None:
     await websocket.accept()
@@ -30,14 +53,16 @@ async def microphone(websocket: WebSocket) -> None:
     async with _mic_lock:
         fd: int | None = None
         try:
-            # module-pipe-source reads the FIFO; opening it for writing pairs
-            # with that reader without modifying JARVIS's sounddevice code.
+            # module-pipe-source reads this FIFO as 44.1 kHz stereo s16le.
+            # JARVIS's unmodified sounddevice input stream requests 16 kHz mono;
+            # ALSA's PulseAudio plugin performs the final per-stream resampling.
             fd = await asyncio.to_thread(os.open, MIC_PIPE, os.O_WRONLY)
             while True:
                 payload = await websocket.receive_bytes()
-                if not payload or len(payload) > 32768:
+                if not payload or len(payload) > 32768 or len(payload) % 2:
                     continue
-                view = memoryview(payload)
+                converted = await asyncio.to_thread(_to_pulse_pipe, payload)
+                view = memoryview(converted)
                 offset = 0
                 while offset < len(view):
                     written = await asyncio.to_thread(os.write, fd, view[offset:])
