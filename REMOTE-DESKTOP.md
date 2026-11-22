@@ -8,7 +8,7 @@ This infrastructure layer runs the original PyQt6 desktop application from the u
 - The browser microphone and speaker toolbar forwards PCM to/from PulseAudio through an isolated WebSocket bridge.
 - Nginx Basic Auth protects the page, VNC WebSocket, and audio sockets. The browser WebSocket is terminated by websockify and forwarded as standard RFB to the localhost-only TigerVNC server.
 
-The source ZIP and all original app files remain unchanged. The browser toolbar is outside the PyQt window and does not replace its screens or components.
+The source ZIP and all original app files remain unchanged. The browser toolbar is outside the PyQt window and does not replace its screens or components. The container deliberately does not run repeated automated VNC handshakes at startup: incomplete probe sessions can count as failed VNC security negotiations and temporarily block real browser sessions.
 
 ## Access
 - Username: `jarvis`
