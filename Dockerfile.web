@@ -48,6 +48,7 @@ RUN mkdir -p /tmp/jarvis-source /run/pulse /run/remote /var/log/supervisor \
     && chmod 660 /run/pulse/mic.pipe
 
 COPY deploy/remote-desktop/audio_bridge.py /opt/jarvis-remote/audio_bridge.py
+COPY deploy/remote-desktop/asoundrc /home/jarvis/.asoundrc
 COPY deploy/remote-desktop/remote.html /usr/share/novnc/remote.html
 COPY deploy/remote-desktop/supervisord.conf /etc/supervisor/conf.d/jarvis.conf
 COPY deploy/remote-desktop/nginx.conf.template /etc/nginx/templates/jarvis.conf.template
