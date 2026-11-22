@@ -149,7 +149,7 @@ ui = ROOT / "static" / "app.js"
 js = ui.read_text(encoding="utf-8")
 js = re.sub(
     r"\$\('authState'\)\.textContent = status\.token_required \? ('[^']+') : 'Somente local';",
-    r"$('authState').textContent = status.token_required ? \\1 : (status.public_mode ? 'Sessão isolada' : 'Somente local');",
+    r"$('authState').textContent = status.token_required ? 'Token obrigatório' : (status.public_mode ? 'Sessão isolada' : 'Somente local');",
     js,
     count=1,
 )
