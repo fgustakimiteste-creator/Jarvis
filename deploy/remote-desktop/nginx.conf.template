@@ -41,10 +41,10 @@ server {
         proxy_buffering off;
     }
 
-    # noVNC 1.7+ uses the WebSocket path below its base URL.
-    # Keep the proxy endpoint aligned with /vncws/vnc.html.
+    # x11vnc in this image supports WebSocket handshakes natively.
+    # Pass the HTTP Upgrade directly to x11vnc; do not unwrap it with websockify.
     location ^~ /vncws/websockify {
-        proxy_pass http://127.0.0.1:6080/;
+        proxy_pass http://127.0.0.1:5900;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
