@@ -43,9 +43,8 @@ RUN mkdir -p /tmp/jarvis-source /run/pulse /run/remote /var/log/supervisor \
     && python -m pip install --upgrade pip \
     && python -m pip install -r /app/requirements.txt \
     && useradd --create-home --uid 10001 --shell /bin/bash jarvis \
-    && mkfifo /run/pulse/mic.pipe \
     && chown -R jarvis:jarvis /app /run/pulse /run/remote /home/jarvis \
-    && chmod 660 /run/pulse/mic.pipe
+
 
 COPY deploy/remote-desktop/audio_bridge.py /opt/jarvis-remote/audio_bridge.py
 COPY deploy/remote-desktop/asoundrc /home/jarvis/.asoundrc
